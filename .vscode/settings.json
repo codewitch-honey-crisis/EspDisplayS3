@@ -1,0 +1,8 @@
+{
+    "cmake.configureOnOpen": false,
+    "files.associations": {
+        "lcd_controller.h": "c",
+        "lcd_pin_config.h": "c",
+        "esp_lcd_panel_interface.h": "c"
+    }
+}
