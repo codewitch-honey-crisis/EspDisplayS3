@@ -1,56 +1,69 @@
-// define this for less flicker:
-#define DOUBLE_BUFFER
 #include <Arduino.h>
-#include <lvgl.h>
+#include <Wire.h>
+
+#include <Telegrama.hpp>
+#include <ft6236.hpp>
+#include <gfx.hpp>
+#include <uix.hpp>
 #include "lcd_controller.h"
-#include "FT6236.h"
-#define get_pos ft6236_pos
 #define I2C_SCL 39
 #define I2C_SDA 38
 #define LCD_BLK 45
-#define LCD_H_RES            320
-#define LCD_V_RES            480
-// change this to control display RAM use:
-#define LVGL_LCD_BUF_SIZE            (LCD_H_RES * 32)
-
-static lv_disp_draw_buf_t disp_buf;  // contains internal graphic buffer(s) called draw buffer(s)
-static lv_disp_drv_t disp_drv;       // contains callback functions
-static lv_color_t *lv_disp_buf;
-#ifdef DOUBLE_BUFFER
-static lv_color_t *lv_disp_buf2;
-#endif
-static bool is_initialized_lvgl = false;
-
-/*Read the touchpad*/
-void touch_read( lv_indev_drv_t * indev_driver, lv_indev_data_t * data )
-{
-    int pos[2];
-    if(get_pos(pos)) {
-        data->state = LV_INDEV_STATE_PR;
-        data->point.x = pos[0];
-        data->point.y = pos[1];   
-    } else {
-        data->state = LV_INDEV_STATE_REL;
+#define LCD_H_RES 320
+#define LCD_V_RES 480
+#define LCD_LINES 16
+using namespace arduino;
+using namespace gfx;
+using namespace uix;
+constexpr static const open_font& text_font = Telegrama;
+constexpr static const uint8_t screen_rotation = 3;
+constexpr static const size_t buffer_size = 32*1024;
+using touch_t = ft6236<LCD_H_RES, LCD_V_RES>;
+touch_t touch;
+;
+using screen_t = screen<LCD_V_RES,LCD_H_RES,rgb_pixel<16>>;
+using button_t = push_button<typename screen_t::pixel_type>;
+using label_t = label<typename screen_t::pixel_type>;
+using color_t = color<typename screen_t::pixel_type>;
+using color32_t = color<rgba_pixel<32>>;
+uint8_t render_buffer1[buffer_size];
+uint8_t render_buffer2[buffer_size];
+screen_t main_screen(sizeof(render_buffer1),render_buffer1,render_buffer2);
+button_t test_button(main_screen);
+label_t test_label(main_screen);
+static bool uix_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t* edata, void* user_ctx) {
+    main_screen.set_flush_complete();
+    return true;
+}
+static void uix_flush(point16 location,typename screen_t::bitmap_type& bmp, void* state) {
+    lcd_flush(location.x,location.y,location.x+bmp.dimensions().width-1,location.y+bmp.dimensions().height-1,bmp.begin());
+}
+static void uix_touch(point16* out_locations, size_t* in_out_locations_size, void* state) {
+    if(in_out_locations_size<=0) {
+        *in_out_locations_size=0;
+        return;
+    }
+    if(touch.update()) {
+        if(touch.xy(&out_locations[0].x,&out_locations[0].y)) {
+            if(*in_out_locations_size>1) {
+                *in_out_locations_size = 1;
+                if(touch.xy2(&out_locations[1].x,&out_locations[1].y)) {
+                    *in_out_locations_size = 2;
+                }
+            } else {
+                *in_out_locations_size = 1;
+            }
+        } else {
+            *in_out_locations_size = 0;
+        }
     }
 }
-static bool lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx) {
-    if(is_initialized_lvgl) {
-        lv_disp_flush_ready((lv_disp_drv_t *)user_ctx);
-        return true;
-    }
-    return false;
-}
-static void lvgl_flush(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map) {
-    lcd_flush(area->x1,area->y1,area->x2,area->y2,color_map);
-}
-
 void setup() {
     Serial.begin(115200);
-    Serial.printf("PSRAM size is %dMB\n",(int)(ESP.getPsramSize()/1024.0/1024.0));
+    Serial.printf("PSRAM size is %dMB\n", (int)(ESP.getPsramSize() / 1024.0 / 1024.0));
     Wire.begin(I2C_SDA, I2C_SCL);
-   lcd_color_trans_done_register_cb(lvgl_flush_ready,&disp_drv);
-   lcd_init(LVGL_LCD_BUF_SIZE*sizeof(lv_color_t));
-   
+    lcd_color_trans_done_register_cb(uix_flush_ready, nullptr);
+    lcd_init(sizeof(render_buffer1));
     /* Lighten the screen with gradient */
     ledcSetup(0, 10000, 8);
     ledcAttachPin(LCD_BLK, 0);
@@ -58,47 +71,48 @@ void setup() {
         ledcWrite(0, i);
         delay(2);
     }
-    lv_init();
-#ifdef DOUBLE_BUFFER    
-    lv_disp_buf = (lv_color_t *)heap_caps_malloc(LVGL_LCD_BUF_SIZE * sizeof(lv_color_t)/2, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    if(lv_disp_buf==NULL) {
-        Serial.println("Out of memory");
-        while(1);
-    }
-    lv_disp_buf2 = (lv_color_t *)heap_caps_malloc(LVGL_LCD_BUF_SIZE * sizeof(lv_color_t)/2, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    if(lv_disp_buf2==NULL) {
-        Serial.println("Out of memory");
-        while(1);
-    }
-    lv_disp_draw_buf_init(&disp_buf, lv_disp_buf,lv_disp_buf2,LVGL_LCD_BUF_SIZE/2);
-#else
-    lv_disp_buf = (lv_color_t *)heap_caps_malloc(LVGL_LCD_BUF_SIZE * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    if(lv_disp_buf==NULL) {
-        Serial.println("Out of memory");
-        while(1);
-    }
-    lv_disp_draw_buf_init(&disp_buf, lv_disp_buf,NULL,LVGL_LCD_BUF_SIZE);
-#endif
-    /*Initialize the display*/
-    lv_disp_drv_init(&disp_drv);
-    /*Change the following line to your display resolution*/
-    disp_drv.hor_res = LCD_H_RES;
-    disp_drv.ver_res = LCD_V_RES;
-    disp_drv.flush_cb = lvgl_flush;
-    disp_drv.draw_buf = &disp_buf;
-    disp_drv.user_data = NULL;
-    lv_disp_drv_register(&disp_drv);
-    static lv_indev_drv_t indev_drv;
-    lv_indev_drv_init( &indev_drv );
-    indev_drv.type = LV_INDEV_TYPE_POINTER;
-    indev_drv.read_cb = touch_read;
-    lv_indev_drv_register( &indev_drv );
-    is_initialized_lvgl = true;
-    Serial.printf("SRAM heap size is %dKB\n",(int)(ESP.getHeapSize()/1024.0));
-    Serial.printf("SRAM heap free is %dKB\n",(int)(ESP.getFreeHeap()/1024.0));
-    Serial.printf("Largest block is %dKB\n",(int)(ESP.getMaxAllocHeap()/1024.0));
+    touch.initialize();
+    touch.rotation(screen_rotation);
+    Serial.printf("SRAM heap size is %dKB\n", (int)(ESP.getHeapSize() / 1024.0));
+    Serial.printf("SRAM heap free is %dKB\n", (int)(ESP.getFreeHeap() / 1024.0));
+    Serial.printf("Largest block is %dKB\n", (int)(ESP.getMaxAllocHeap() / 1024.0));
+    main_screen.background_color(color_t::white);
+
+    test_label.bounds(srect16(spoint16(10,10),ssize16(200,60)));
+    test_label.text_color(color32_t::blue);
+    test_label.text_open_font(&text_font);
+    test_label.text_line_height(50);
+    test_label.text_justify(uix_justify::center);
+    test_label.round_ratio(NAN);
+    test_label.padding({8,8});
+    test_label.text("Hello");    
+    main_screen.register_control(test_label);
+
+    test_button.bounds(srect16(spoint16(25,25),ssize16(200,100)));
+    auto bg = color32_t::light_blue;
+    bg.channelr<channel_name::A>(.5);
+    test_button.background_color(bg,true);
+    test_button.border_color(color32_t::black);
+    test_button.text_color(color32_t::black);
+    test_button.text_open_font(&text_font);
+    test_button.text_line_height(25);
+    test_button.text_justify(uix_justify::bottom_right);
+    test_button.round_ratio(NAN);
+    test_button.padding({8,8});
+    test_button.text("Released");
+    test_button.on_pressed_changed_callback([](bool pressed,void* state) {test_button.text(pressed?"Pressed":"Released");});
+    main_screen.register_control(test_button);
+
+    main_screen.on_flush_callback(uix_flush,nullptr);
+    main_screen.on_touch_callback(uix_touch,nullptr);
+    
 }
 void loop() {
-    lv_timer_handler();
-    delay(5);
+    main_screen.update();
+    uint16_t x, y;
+    touch.update();
+    if (touch.xy(&x, &y)) {
+        Serial.printf("x: %d, y: %d\n", (int)x, (int)y);
+        
+    }
 }

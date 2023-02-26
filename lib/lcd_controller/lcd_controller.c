@@ -66,7 +66,7 @@ esp_err_t lcd_init(size_t max_transfer_bytes)
     esp_lcd_panel_io_handle_t io_handle = NULL;
     esp_lcd_panel_io_i80_config_t io_config = {
         .cs_gpio_num = CONFIG_LCD_CS_GPIO,
-        .pclk_hz = 8 * 1000 * 1000,
+        .pclk_hz = 4 * 1000 * 1000,
         .trans_queue_depth = 20,
         .dc_levels = {
             .dc_idle_level = 0,
@@ -90,21 +90,49 @@ esp_err_t lcd_init(size_t max_transfer_bytes)
 
     esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = -1,
-        .color_space = ESP_LCD_COLOR_SPACE_RGB,
+        .color_space = ESP_LCD_COLOR_SPACE_BGR,
         .bits_per_pixel = 16,
     };
     esp_lcd_new_panel_ili9488(io_handle, &panel_config, &panel_handle);
 
+    static const uint8_t rotation = 3;
+
     esp_lcd_panel_reset(panel_handle);
     esp_lcd_panel_init(panel_handle);
     esp_lcd_panel_invert_color(panel_handle, false);
-    esp_lcd_panel_swap_xy(panel_handle,false);
-    esp_lcd_panel_mirror(panel_handle,true,false);
+    bool swap_xy, mirror_x,mirror_y;
+    switch(rotation&3) {
+        case 0:
+            mirror_x = true;
+            mirror_y = false;
+            swap_xy  = false;
+            break;
+        case 1:
+            mirror_x = false;
+            mirror_y = false;
+            swap_xy = true;
+            break;
+        case 2:
+            mirror_x = false;
+            mirror_y = true;
+            swap_xy = false;
+            break;
+        case 3:
+            mirror_x = true;
+            mirror_y = true;
+            swap_xy = true;
+            break;
+    }
+    esp_lcd_panel_swap_xy(panel_handle,swap_xy);
+    esp_lcd_panel_mirror(panel_handle,mirror_x,mirror_y);
+    
     esp_lcd_panel_set_gap(panel_handle, 0, 0);
     esp_lcd_panel_disp_off(panel_handle, true);
 
     /* Turn on LCD backlight */
     gpio_set_level(CONFIG_LCD_BACK_LIGHT_GPIO, 1);
 
+    
+    
     return true;
 }
