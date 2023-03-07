@@ -1,17 +1,20 @@
-#ifndef HTCW_UIX_LABEL_HPP
-#define HTCW_UIX_LABEL_HPP
+#ifndef HTCW_UIX_PUSH_BUTTON_HPP
+#define HTCW_UIX_PUSH_BUTTON_HPP
 #include "uix_core.hpp"
 namespace uix {
     template<typename PixelType,typename PaletteType = gfx::palette<PixelType,PixelType>>
-    class label final : public control<PixelType, PaletteType> {
+    class push_button final : public control<PixelType, PaletteType> {
     public:
-        using type = label;
+        using type = push_button;
         using base_type = control<PixelType, PaletteType>;
         using pixel_type = PixelType;
         using palette_type = PaletteType;
         using control_surface_type = typename base_type::control_surface_type;
         typedef void(*on_pressed_changed_callback_type)(bool pressed,void* state);
     private:
+        bool m_pressed;
+        on_pressed_changed_callback_type m_on_pressed_changed_callback;
+        void* m_on_pressed_changed_callback_state;
         float m_round_ratio;
         size16 m_padding;
         const char* m_text;
@@ -20,10 +23,15 @@ namespace uix {
         size_t m_text_line_height;
         uix_justify m_text_justify;
         gfx::rgba_pixel<32> m_background_color, m_border_color,m_text_color;
-        label(const label& rhs)=delete;
-        label& operator=(const label& rhs)=delete;
-        void do_move(label& rhs) {
+        gfx::rgba_pixel<32> m_pressed_background_color, m_pressed_border_color,m_pressed_text_color;
+        push_button(const push_button& rhs)=delete;
+        push_button& operator=(const push_button& rhs)=delete;
+        void do_move(push_button& rhs) {
             do_move_control(rhs);
+            m_pressed = rhs.m_pressed;
+            m_on_pressed_changed_callback = rhs.m_on_pressed_changed_callback;
+            rhs.m_on_pressed_changed_callback = nullptr;
+            m_on_pressed_changed_callback_state = rhs.m_on_pressed_changed_callback_state;
             m_round_ratio = rhs.m_round_ratio;
             m_padding = rhs.m_padding;
             m_text = rhs.m_text;
@@ -34,23 +42,29 @@ namespace uix {
             m_background_color = rhs.m_background_color;
             m_border_color = rhs.m_border_color;
             m_text_color = rhs.m_text_color;
+            m_pressed_background_color = rhs.m_pressed_background_color;
+            m_pressed_border_color = rhs.m_pressed_border_color;
+            m_pressed_text_color = rhs.m_pressed_text_color;
         }
     public:
-        label(label&& rhs) {
+        push_button(push_button&& rhs) {
             do_move(rhs);
         }
-        label& operator=(label&& rhs) {
+        push_button& operator=(push_button&& rhs) {
             do_move(rhs);
             return *this;
         }
         
-        label(invalidation_tracker& parent, const palette_type* palette = nullptr) : base_type(parent,palette), m_round_ratio(NAN),m_padding(4,4), m_text_line_height(25),m_text_justify(uix_justify::center) {
+        push_button(invalidation_tracker& parent, const palette_type* palette = nullptr) : base_type(parent,palette), m_pressed(false),m_on_pressed_changed_callback(nullptr),m_on_pressed_changed_callback_state(nullptr), m_round_ratio(NAN),m_padding(4,4), m_text_line_height(25),m_text_justify(uix_justify::center) {
             using color_t = gfx::color<gfx::rgba_pixel<32>>;
-            background_color(color_t::white);
-            border_color(color_t::white);
-            text_color(color_t::black);
+            background_color(color_t::white,true);
+            border_color(color_t::black,true);
+            text_color(color_t::black,true);
             m_ofnt = nullptr;
             m_fnt = nullptr;
+        }
+        bool pressed() const {
+            return m_pressed;
         }
         const char* text() const {
             return m_text;
@@ -104,36 +118,86 @@ namespace uix {
         gfx::rgba_pixel<32> background_color() const {
             return m_background_color;
         }
-        void background_color(gfx::rgba_pixel<32> value) {
+        void background_color(gfx::rgba_pixel<32> value, bool set_pressed = false) {
             m_background_color = value;
+            if(set_pressed) {
+                m_pressed_background_color = value;
+            }
             this->invalidate();
         }
         gfx::rgba_pixel<32> border_color() const {
             return m_border_color;
         }
-        void border_color(gfx::rgba_pixel<32> value) {
+        void border_color(gfx::rgba_pixel<32> value, bool set_pressed = false) {
             m_border_color = value;
+            if(set_pressed) {
+                m_pressed_border_color = value;
+            }
             this->invalidate();
         }
         gfx::rgba_pixel<32> text_color() const {
             return m_text_color;
         }
-        void text_color(gfx::rgba_pixel<32> value) {
+        void text_color(gfx::rgba_pixel<32> value, bool set_pressed = false) {
             m_text_color = value;
+            if(set_pressed) {
+                m_pressed_text_color = value;
+            }
             this->invalidate();
         }
-        virtual void on_render(control_surface_type& destination,const srect16& clip) override {
+        gfx::rgba_pixel<32> pressed_background_color() const {
+            return m_pressed_background_color;
+        }
+        void pressed_background_color(gfx::rgba_pixel<32> value) {
+            m_pressed_background_color = value;
+            this->invalidate();
+        }
+        gfx::rgba_pixel<32> pressed_border_color() const {
+            return m_pressed_border_color;
+        }
+        void pressed_border_color(gfx::rgba_pixel<32> value) {
+            m_pressed_border_color = value;
+            this->invalidate();
+        }
+        gfx::rgba_pixel<32> pressed_text_color() const {
+            return m_pressed_text_color;
+        }
+        void pressed_text_color(gfx::rgba_pixel<32> value) {
+            m_pressed_text_color = value;
+            this->invalidate();
+        }
+        on_pressed_changed_callback_type on_pressed_changed_callback() const {
+            return m_on_pressed_changed_callback;
+        }
+        void* on_pressed_changed_callback_state() const {
+            return m_on_pressed_changed_callback_state;
+        }
+        void on_pressed_changed_callback(on_pressed_changed_callback_type callback, void* state = nullptr) {
+            m_on_pressed_changed_callback = callback;
+            m_on_pressed_changed_callback_state = state;
+        }
+        virtual void on_paint(control_surface_type& destination,const srect16& clip) override {
             srect16 text_rect;
             int16_t offset_x,offset_y;
             gfx::rgba_pixel<32> background_color,border_color,text_color;
             srect16 b=(srect16)this->dimensions().bounds();
             b=srect16(b.x1,b.y1,b.x2-2,b.y2-2);
-            background_color = m_background_color;
-            border_color = m_border_color;
-            text_color = m_text_color;
-            offset_x = 0;
-            offset_y = 0;
+            if(m_pressed) {
+                background_color = m_pressed_background_color;
+                border_color = m_pressed_border_color;
+                text_color = m_pressed_text_color;
+                offset_x = 1;
+                offset_y = 1;
+            } else {
+                background_color = m_background_color;
+                border_color = m_border_color;
+                text_color = m_text_color;
+                offset_x = 0;
+                offset_y = 0;
+            }
             b.inflate_inplace(-1,-1);
+            b.offset_inplace(offset_x,offset_y);
+            
             if(m_round_ratio!=m_round_ratio) {
                 gfx::draw::filled_rectangle(destination,b,background_color,&clip);
             } else {
@@ -224,7 +288,28 @@ namespace uix {
             } else {
                 gfx::draw::rounded_rectangle(destination,b,m_round_ratio,border_color,&clip);
             }
-            base_type::on_render(destination,clip);
+            base_type::on_paint(destination,clip);
+        }
+        virtual bool on_touch(size_t locations_size,const spoint16* locations) override {
+            if(m_pressed==false) {
+                m_pressed = true;
+                if(m_on_pressed_changed_callback!=nullptr) {
+                    m_on_pressed_changed_callback(m_pressed,m_on_pressed_changed_callback_state);
+                }
+                if(base_type::visible()) {
+                    this->invalidate();
+                }
+            }
+            return true;
+        }
+        virtual void on_release() override {
+            m_pressed = false;
+            if(m_on_pressed_changed_callback!=nullptr) {
+                m_on_pressed_changed_callback(m_pressed,m_on_pressed_changed_callback_state);
+            }
+            if(base_type::visible()) {
+                this->invalidate();
+            }
         }
     };
 }

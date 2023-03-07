@@ -5,6 +5,7 @@
 #include <ft6236.hpp>
 #include <gfx.hpp>
 #include <uix.hpp>
+#include <uix_canvas.hpp>
 #include "lcd_controller.h"
 #define I2C_SCL 39
 #define I2C_SDA 38
@@ -17,13 +18,14 @@ using namespace gfx;
 using namespace uix;
 constexpr static const open_font& text_font = Telegrama;
 constexpr static const uint8_t screen_rotation = 3;
-constexpr static const size_t buffer_size = 32*1024;
+constexpr static const size_t buffer_size = 64*1024;
 using touch_t = ft6236<LCD_H_RES, LCD_V_RES>;
 touch_t touch;
 ;
 using screen_t = screen<LCD_V_RES,LCD_H_RES,rgb_pixel<16>>;
 using button_t = push_button<typename screen_t::pixel_type>;
 using label_t = label<typename screen_t::pixel_type>;
+using canvas_t = canvas<typename screen_t::pixel_type>;
 using color_t = color<typename screen_t::pixel_type>;
 using color32_t = color<rgba_pixel<32>>;
 uint8_t render_buffer1[buffer_size];
@@ -31,6 +33,7 @@ uint8_t render_buffer2[buffer_size];
 screen_t main_screen(sizeof(render_buffer1),render_buffer1,render_buffer2);
 button_t test_button(main_screen);
 label_t test_label(main_screen);
+canvas_t test_canvas(main_screen);
 static bool uix_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t* edata, void* user_ctx) {
     main_screen.set_flush_complete();
     return true;
@@ -103,16 +106,14 @@ void setup() {
     test_button.on_pressed_changed_callback([](bool pressed,void* state) {test_button.text(pressed?"Pressed":"Released");});
     main_screen.register_control(test_button);
 
+    test_canvas.bounds(srect16(spoint16(100,25),ssize16(175,105)));
+    test_canvas.background_color(color32_t::white);
+    main_screen.register_control(test_canvas);
+
     main_screen.on_flush_callback(uix_flush,nullptr);
     main_screen.on_touch_callback(uix_touch,nullptr);
     
 }
 void loop() {
     main_screen.update();
-    uint16_t x, y;
-    touch.update();
-    if (touch.xy(&x, &y)) {
-        Serial.printf("x: %d, y: %d\n", (int)x, (int)y);
-        
-    }
 }
