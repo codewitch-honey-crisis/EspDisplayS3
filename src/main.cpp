@@ -22,24 +22,24 @@ constexpr static const size_t buffer_size = 64*1024;
 using touch_t = ft6236<LCD_H_RES, LCD_V_RES>;
 touch_t touch;
 ;
-using screen_t = screen<LCD_V_RES,LCD_H_RES,rgb_pixel<16>>;
-using button_t = push_button<typename screen_t::pixel_type>;
-using label_t = label<typename screen_t::pixel_type>;
-using canvas_t = canvas<typename screen_t::pixel_type>;
+using screen_t = screen<rgb_pixel<16>>;
+using button_t = push_button<screen_t::control_surface_type>;
+using label_t = label<screen_t::control_surface_type>;
+using canvas_t = canvas<screen_t::control_surface_type>;
 using color_t = color<typename screen_t::pixel_type>;
 using color32_t = color<rgba_pixel<32>>;
 uint8_t render_buffer1[buffer_size];
 uint8_t render_buffer2[buffer_size];
-screen_t main_screen(sizeof(render_buffer1),render_buffer1,render_buffer2);
+screen_t main_screen({LCD_V_RES,LCD_H_RES},sizeof(render_buffer1),render_buffer1,render_buffer2);
 button_t test_button(main_screen);
 label_t test_label(main_screen);
 canvas_t test_canvas(main_screen);
 static bool uix_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t* edata, void* user_ctx) {
-    main_screen.set_flush_complete();
+    main_screen.flush_complete();
     return true;
 }
-static void uix_flush(point16 location,typename screen_t::bitmap_type& bmp, void* state) {
-    lcd_flush(location.x,location.y,location.x+bmp.dimensions().width-1,location.y+bmp.dimensions().height-1,bmp.begin());
+static void uix_flush(const rect16& bounds,const void* bmp, void* state) {
+    lcd_flush(bounds.x1,bounds.y1,bounds.x2,bounds.y2,(void*)bmp);
 }
 static void uix_touch(point16* out_locations, size_t* in_out_locations_size, void* state) {
     if(in_out_locations_size<=0) {
@@ -107,11 +107,10 @@ void setup() {
     main_screen.register_control(test_button);
 
     test_canvas.bounds(srect16(spoint16(100,25),ssize16(175,105)));
-    test_canvas.background_color(color32_t::white);
     main_screen.register_control(test_canvas);
 
-    main_screen.on_flush_callback(uix_flush,nullptr);
-    main_screen.on_touch_callback(uix_touch,nullptr);
+    main_screen.on_flush_callback(uix_flush);
+    main_screen.on_touch_callback(uix_touch);
     
 }
 void loop() {
